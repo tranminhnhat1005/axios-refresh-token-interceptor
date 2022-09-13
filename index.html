@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.27.2/axios.min.js"
+        integrity="sha512-odNmoc1XJy5x1TMVMdC7EMs3IVdItLPlCeL5vSUPN2llYKMJ2eByTTAIiiuqLg+GdNr9hF6z81p27DArRFKT7A=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+
+<body>
+
+    <button id="login">Login</button>
+    <button id="get-list">Get list</button>
+    <script>
+        //create instance axios
+        const instance = axios.create({
+            baseURL: '/api', //https://localhost:3000/api
+            timeout: 3 * 1000, //ms
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+
+        //handle instance interceptor request
+        instance.interceptors.request.use(async (config) => {
+            console.log('Before request:::');
+            if (config.url.indexOf('/login') >= 0 || config.url.indexOf('/refresh-token') >= 0) {
+                return config;
+            }
+            const { token, timeExpired } = await instance.getLocalAccessToken();
+            const now = Date.now();
+            console.log(`timeExpired::: ${timeExpired} vs now::: ${now}`);
+            if (timeExpired < now) {
+                try {
+                    console.log('AccessToken expired');
+                    const { status, element: { token, timeExpired } } = await onRefreshToken();
+                    if (status === 'success') {
+                        await instance.setLocalAccessToken({ token, timeExpired });
+                        return config;
+                    }
+                } catch (error) {
+                    return Promise.reject(error);
+                }
+            }
+            return config;
+        }, (error) => {
+            return Promise.reject(error);
+        });
+
+        //handle instance interceptor response
+        instance.interceptors.response.use((response) => {
+            console.log('After response:::');
+            return response;
+        }, (error) => {
+            return Promise.reject(error);
+        });
+
+        //set local storage instance
+        instance.setLocalAccessToken = async ({ token, timeExpired }) => {
+            window.localStorage.setItem('accessToken', JSON.stringify({ token, timeExpired }));
+        }
+
+        //get local storage instance
+        instance.getLocalAccessToken = async () => {
+            const accessToken = window.localStorage.getItem('accessToken');
+            return JSON.parse(accessToken);
+        }
+
+        ///FUNCTION
+        const btnLogin = document.getElementById('login');
+        const btnGetList = document.getElementById('get-list');
+        if (btnLogin) {
+            btnLogin.addEventListener('click', async () => {
+                const { status, element: { token, timeExpired } } = await onLogin();
+                if (status === 'success') {
+                    await instance.setLocalAccessToken({ token, timeExpired });
+                }
+            })
+        }
+
+        if (btnGetList) {
+            btnGetList.addEventListener('click', async () => {
+                const { status, element } = await onGetList();
+                console.table(element);
+            });
+        }
+
+        const onLogin = async () => (await instance.get('/login')).data;
+        const onGetList = async () => (await instance.get('/users')).data;
+        const onRefreshToken = async () => (await instance.get('/refresh-token')).data;
+        ///END FUNCTION
+    </script>
+</body>
+
+</html>
